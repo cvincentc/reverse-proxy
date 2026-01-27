@@ -205,8 +205,3 @@ curl -k https://localhost/api/chat \
 ```
 
 
-
-## Flow diagram 
-
-![Flow Diagram](/Users/yi/Desktop/Screenshot 2026-01-22 at 21.30.17.png)
-
