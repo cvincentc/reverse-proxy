@@ -1,0 +1,76 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      - OLLAMA_NUM_PARALLEL=8
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - guardian-network
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # one-shot: pull the model at startup
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-lc"]
+    command: ["ollama pull granite3.3:2b"]
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    networks:
+      - guardian-network
+    restart: "no"
+
+  mitmproxy:
+    build:
+      context: .
+      dockerfile: ./dockerfile.mitmproxy
+    container_name: mitmproxy
+    env_file:
+      - .env
+    volumes:
+      - ./mitmproxy.py:/work/mitmproxy.py:ro
+      - ./requirements.txt:/work/requirements.txt:ro
+      - ./.env:/work/.env:ro
+    working_dir: /work
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+    expose:
+      - "8080"
+    networks:
+      - guardian-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    depends_on:
+      - mitmproxy
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl/nginx.crt:/etc/nginx/ssl/nginx.crt:ro
+      - ./ssl/nginx.key:/etc/nginx/ssl/nginx.key:ro
+    networks:
+      - guardian-network
+
+volumes:
+  ollama_data:
+    driver: local
+
+networks:
+  guardian-network:
+    driver: bridge
