@@ -208,4 +208,5 @@ curl -k https://localhost/api/chat \
 
 ## Flow diagram 
 
-![image-20260127043406277](/Users/yi/Library/Application Support/typora-user-images/image-20260127043406277.png)
+![Flow Diagram](/Users/yi/Desktop/Screenshot 2026-01-22 at 21.30.17.png)
+
