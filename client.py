@@ -25,7 +25,7 @@ def main():
     }
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=600)
+        response = requests.post(url, json=payload, headers=headers, timeout=600, verify='./ssl/nginx.crt')
         print("\nResponse:")
         print(response.json())
     except Exception as e:

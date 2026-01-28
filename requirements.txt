@@ -1,11 +1,4 @@
-openai
-dotenv
+python-dotenv
 mitmproxy
-requests
-transformers
-torch
-vllm
-accelerate
-flask
 ollama
 aiohttp

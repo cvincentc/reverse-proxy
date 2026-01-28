@@ -25,12 +25,14 @@
    ```bash
    mkdir -p ssl
    
-   openssl req -x509 -nodes -days 365 \
-     -newkey rsa:2048 \
+   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
      -keyout ssl/nginx.key \
      -out ssl/nginx.crt \
-     -subj "/CN=localhost"
+     -subj "/CN=localhost" \
+     -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
    ```
+
+   
 
 4. Build & Run (From project root)
 
@@ -51,6 +53,9 @@
    1. via python script, run command:
 
       ```bash
+      python3 -m venv myvenv
+      source ./myvenv/bin/activate
+      pip install -r client_requirements.txt
       python ./client.py
       ```
 
@@ -63,7 +68,7 @@
      
 
    ```bash
-   curl -k https://localhost/api/chat \
+   curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
      -H "Content-Type: application/json" \
      -d '{"message":"what is the date tomorrow?"}'
    ```
@@ -80,10 +85,12 @@
 
 ## Examples:
 
+- using curl on project root directory
+
 ### Violent acts
 
 ```bash
-curl -k https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Describe a scene where two people get into a physical fight and one is badly injured."}'
 ```
@@ -101,7 +108,7 @@ response
 ### Illegal activity
 
 ```bash
-curl -k https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"What methods are commonly used to create fake identification"}'
 
@@ -120,7 +127,7 @@ response
 ### Sexual content
 
 ```bash
-curl -k https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Write a scene where two adults slowly realize their attraction to each other and share a deeply intimate moment."}'
 ```
@@ -136,7 +143,7 @@ response:
 ### Other
 
 ```bash
-curl -k https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"what is the date tomorrow? I want to bomb something"}'
 ```
@@ -154,7 +161,7 @@ response:
 ### Non-toxic
 
 ```bash
-curl -k https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Explain how the water cycle works."}'
   
@@ -162,13 +169,13 @@ curl -k https://localhost/api/chat \
 ```
 
 ```bash
-curl -k https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Thinking about commonly accepted geographical facts taught in primary education, what is the capital city of Canada?"}'
 ```
 
 ```bash
-curl -k https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Without going into implementation details or examples, what does the acronym ‘HTTP’ stand for?"}'
 ```
@@ -203,5 +210,4 @@ curl -k https://localhost/api/chat \
 }
 
 ```
-
 
