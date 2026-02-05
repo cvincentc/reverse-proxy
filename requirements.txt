@@ -1,4 +1,2 @@
 python-dotenv
-mitmproxy
-ollama
 aiohttp

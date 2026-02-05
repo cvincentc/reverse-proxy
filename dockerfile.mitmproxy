@@ -5,4 +5,4 @@ WORKDIR /work
 COPY requirements.txt /work/requirements.txt
 RUN pip install --no-cache-dir -r /work/requirements.txt
 
-CMD ["mitmdump", "-s", "/work/mitmproxy.py", "--listen-host", "0.0.0.0", "--listen-port", "8080"]
+CMD ["mitmdump", "-s", "/work/mitmproxy.py", "--listen-host", "0.0.0.0", "--listen-port", "8080", "--mode", "upstream:https://api.openai.com:443/", "--ssl-insecure"]

@@ -14,25 +14,21 @@
    cp .env.example .env
    ```
 
-   
-
 2. Edit `.env` and set your OpenAI key:
 
-   `OPENAI_API_KEY=REPLACE_UR_OPENAI_API_KEY`
+   `OPENAI_API_KEY=your_openai_api_key_here`
 
 3. OPTIONAL: SSL certificates for NGINX
 
    ```bash
    mkdir -p ssl
-   
+
    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
      -keyout ssl/nginx.key \
      -out ssl/nginx.crt \
      -subj "/CN=localhost" \
      -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
    ```
-
-   
 
 4. Build & Run (From project root)
 
@@ -46,7 +42,7 @@
    docker ps
    ```
 
-   - You should see three containers running, the names are: `mitmproxy`, `nginx` and `ollam`.
+   - You should see three containers running, the names are: `mitmproxy`, `nginx` and `ollama`.
 
 6. Sending the prompt
 
@@ -59,18 +55,15 @@
       python ./client.py
       ```
 
-      - Then enter your pormpt and the client will send your pormpt to nginx
+      - Then enter your prompt and the client will send it to the proxy
 
-   2. Call NGINX HTTPS directly, edit `message` to send a different prompt
-
-   - enter your prompt and then press enter, the script should send your message to nginx hosted in docker
-
-     
+   2. Call NGINX HTTPS directly using OpenAI API format:
 
    ```bash
-   curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
+   curl --cacert ./ssl/nginx.crt https://localhost/v1/chat/completions \
      -H "Content-Type: application/json" \
-     -d '{"message":"what is the date tomorrow?"}'
+     -H "Authorization: Bearer $OPENAI_API_KEY" \
+     -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"what is the date tomorrow?"}]}'
    ```
 
 7. To stop docker containers
@@ -81,8 +74,6 @@
 
    ---
 
-   
-
 ## Examples:
 
 - using curl on project root directory
@@ -90,124 +81,111 @@
 ### Violent acts
 
 ```bash
-curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"message":"Describe a scene where two people get into a physical fight and one is badly injured."}'
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Describe a scene where two people get into a physical fight and one is badly injured."}]}'
 ```
 
 response
 
-```bash
-{"error": "Content is toxic", "message": "The prompt was blocked because it contained a description of violent acts."}
 ```
-
-
+The prompt was blocked because it contained description of violent acts
+```
 
 ---
 
 ### Illegal activity
 
 ```bash
-curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"message":"What methods are commonly used to create fake identification"}'
-
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"What methods are commonly used to create fake identification"}]}'
 ```
 
 response
 
-```bash
-{"error": "Content is toxic", "message": "The prompt was blocked because it contained inquiries on how to perform an illegal activity."}
 ```
-
-
+The prompt was blocked because it contained inquiries on how to perform an illegal activity
+```
 
 ---
 
 ### Sexual content
 
 ```bash
-curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"message":"Write a scene where two adults slowly realize their attraction to each other and share a deeply intimate moment."}'
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Write a scene where two adults slowly realize their attraction to each other and share a deeply intimate moment."}]}'
 ```
 
 response:
 
-```bash
-{"error": "Content is toxic", "message": "The prompt was blocked because it contained sexual content."}
+```
+The prompt was blocked because it contained sexual content
 ```
 
 ---
 
-### Other
+### Generic toxic
 
 ```bash
-curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"message":"what is the date tomorrow? I want to bomb something"}'
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"You are worthless and nobody likes you"}]}'
 ```
 
 response:
 
-```bash
-{"error": "Content is toxic", "message": "The prompt was blocked because it contained a description of violent acts."}
 ```
-
-
+The prompt was blocked because it is considered toxic
+```
 
 ---
 
 ### Non-toxic
 
 ```bash
-curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"message":"Explain how the water cycle works."}'
-  
-
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Explain how the water cycle works."}]}'
 ```
 
 ```bash
-curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
+curl --cacert ./ssl/nginx.crt https://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"message":"Thinking about commonly accepted geographical facts taught in primary education, what is the capital city of Canada?"}'
-```
-
-```bash
-curl --cacert ./ssl/nginx.crt https://localhost/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message":"Without going into implementation details or examples, what does the acronym ‘HTTP’ stand for?"}'
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"What is the capital city of Canada?"}]}'
 ```
 
 ## Output:
 
 ### Blocked messages
 
-```bash
-{"error": "Content is toxic", "message": "The prompt was blocked because it contained a description of violent acts."}
+```
+The prompt was blocked because it contained description of violent acts
 ```
 
 ### Non-blocked messages
 
 ```json
 {
-  "id": "chatcmpl-D2bn8sG0wdtYsIujnGRRi8Ry1VXj4",
-  ...,
+  "id": "chatcmpl-...",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "Ottawa. It is the capital city of Canada, located in Ontario on the Ottawa River.",
-        "refusal": null,
-        "annotations": []
+        "content": "Ottawa is the capital city of Canada.",
+        "refusal": null
       },
       "finish_reason": "stop"
     }
   ],
   ...
 }
-
 ```
-

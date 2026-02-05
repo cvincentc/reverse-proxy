@@ -1,243 +1,141 @@
-import logging
 from mitmproxy import http
 import json
 import os
-import ollama
-import asyncio
 import aiohttp
 from dotenv import load_dotenv
-from dataclasses import dataclass
-from typing import Optional, Tuple
-
 
 load_dotenv()
 
-@dataclass
-class Risk:
-    name: str
-    definition: str
-    blockMessage: Optional[str] = None
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
+GUARDIAN_MODEL = os.getenv("GRANITE_GUARDIAN_MODEL", "granite3-guardian:2b")
 
-@dataclass
-class RiskResult:
-    name: str
-    detected: Optional[bool] = None
-    blockMessage: Optional[str] = None
-
-
+# Exactly 3 categories as required by exercise
 RISK_CATEGORIES = [
-    Risk(
-        'violence',
-        'Content promoting physical, mental, or sexual harm.',
-        'The prompt was blocked because it contained a description of violent acts.'
-    ),
-    Risk(
-        'illegal_activity',
-        'Detect inquiries on how to perform illegal activities.',
-        'The prompt was blocked because it contained inquiries on how to perform an illegal activity.'
-    ),
-    Risk(
-        'sexual_content',
-        'Explicit or suggestive material of a sexual nature.',
-        'The prompt was blocked because it contained sexual content.'
-    ),
-    Risk(
-        'harm',
-        'Generally harmful or dangerous content.'
-    ),
-    Risk(
-        'social_bias',
-        'Prejudice based on identity or characteristics (race, gender, religion, nationality, etc.).'
-    ),
-    Risk(
-        'jailbreak',
-        'Attempts to manipulate AI to generate harmful, undesired, or inappropriate content.'
-    ),
-    Risk(
-        'profanity',
-        'Offensive language or insults.'
-    ),
-    Risk(
-        'unethical_behavior',
-        'Actions that violate moral or legal standards.'
-    )
+    ("violent_acts", "description of violent acts",
+     "The prompt was blocked because it contained description of violent acts"),
+    ("illegal_activity", "inquiries on how to perform an illegal activity",
+     "The prompt was blocked because it contained inquiries on how to perform an illegal activity"),
+    ("sexual_content", "sexual content",
+     "The prompt was blocked because it contained sexual content"),
 ]
 
 
 class GuardianFilter:
-    def __init__(self):
-        self.ollamaHost = os.getenv("OLLAMA_HOST")
-        self.modelName = os.getenv("GRANITE_GUARDIAN_MODEL")
-        self.promptDestinationHost = os.getenv("DESTINATION_HOST")
-        self.ollamaClient = ollama.Client(host=self.ollamaHost)
-        self.openAiApiKey = os.getenv("OPENAI_API_KEY", "")
-        self.openAiReqUrl = os.getenv("OPENAI_API_URL")
-        self.openAiApiModel = os.getenv("OPENAI_API_MODEL")
-        self.allowedPath = os.getenv("ALLOWED_PATH", "")
-        self.allowedHost = os.getenv("ALLOWED_HOST", "")
 
-    async def analyze_risk(self, session: aiohttp.ClientSession, userPrompt: str, risk: Risk) -> RiskResult | None:
-        """
-        Analyze prompt using LLM model and returns RiskResult
-        """
+    async def check_content(self, text: str) -> tuple[bool, str]:
+        """Check text for violations. Returns (is_blocked, message)"""
+        async with aiohttp.ClientSession() as session:
+            # Check 3 specific categories first
+            for cat_id, cat_desc, block_msg in RISK_CATEGORIES:
+                prompt = f"""You are a content safety classifier.
+Determine if the following text contains {cat_desc}.
+Text: \"\"\"{text}\"\"\"
+Answer exactly "Yes" or "No"."""
 
-        instructionPrompt = f"""
-            You are a content safety classifier.
+                payload = {
+                    "model": GUARDIAN_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.0, "num_predict": 10}
+                }
 
-            Task:
-            Determine whether the user message VIOLATES the safety category listed below.
+                try:
+                    async with session.post(
+                        f"{OLLAMA_HOST}/api/generate",
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=120)
+                    ) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            answer = result.get("response", "").strip().lower()
+                            if answer == "yes":
+                                return True, block_msg
+                except Exception:
+                    pass
 
-            Safety Category:
-            {risk.name}
+            # Generic toxicity check
+            toxic_prompt = f"""You are a content safety classifier.
+Determine if the following text is toxic or harmful.
+Text: \"\"\"{text}\"\"\"
+Answer exactly "Yes" or "No"."""
 
-            Definition:
-            {risk.definition}
-
-            User Message:
-            \"\"\"{userPrompt}\"\"\"
-
-            Decision Rules:
-            - Answer "Yes" ONLY if the user message CLEARLY violates the definition.
-            - Answer "No" if the message is neutral, informational, harmless, or unrelated.
-            - If you are uncertain or there is insufficient evidence, answer "No".
-
-            Output Format:
-            Respond with EXACTLY one word: Yes or No.
-            """
-        loop = asyncio.get_event_loop()
-        detected = None
-        try:
             payload = {
-                "model": self.modelName,
-                "prompt": instructionPrompt,
+                "model": GUARDIAN_MODEL,
+                "prompt": toxic_prompt,
                 "stream": False,
                 "options": {"temperature": 0.0, "num_predict": 10}
             }
+            try:
+                async with session.post(
+                    f"{OLLAMA_HOST}/api/generate",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=120)
+                ) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        answer = result.get("response", "").strip().lower()
+                        if answer == "yes":
+                            return True, "The prompt was blocked because it is considered toxic"
+            except Exception:
+                pass
 
-            async with session.post(
-                f"{self.ollamaHost}/api/generate",
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=240)
-            ) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    resultText = result.get("response", "").strip().lower()
-                    logging.info(f"Guardian [{risk.name}]: {resultText}")
-                    
-                    if 'yes' == resultText:
-                        detected = True
-                    elif 'no' == resultText:
-                        detected = False
-                else:
-                    logging.error(f"Ollama API error for {risk.name}: {response.status}")
-                    
-        except asyncio.TimeoutError:
-            logging.error(f"Timeout analyzing risk({risk.name})")
-        except Exception as e:
-            logging.error(f"Error analyzing risk({risk.name}): {e}")
+        return False, ""
 
-        return RiskResult(name=risk.name, detected=detected, blockMessage=risk.blockMessage)
+    def extract_user_content(self, body: dict) -> str:
+        """Extract user messages from OpenAI chat format"""
+        messages = body.get("messages", [])
+        user_msgs = [m.get("content", "") for m in messages if m.get("role") == "user"]
+        return " ".join(user_msgs)
 
-    async def analyze(self, prompt: str) -> Tuple[Optional[str], Optional[RiskResult]]:
-        errorMsg = None
-        riskResult = None
-        allRiskAnalyzed = True
-        try:
-        
-            # Create one session for all requests
-            async with aiohttp.ClientSession() as session:
-                tasks = [
-                    self.analyze_risk(session, prompt, risk) 
-                    for risk in RISK_CATEGORIES
-                ]
-                
-                # parallel using the same session
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for result in results:
-                if result is None or result.detected is None:
-                    allRiskAnalyzed = False
-                elif result.detected:
-                    riskResult = result
-                    break
-        except Exception as e:
-            logging.error(f"Error occurred analyzing prompt, exeception: {e}")
-            errorMsg = "Failed to analyze user prompt"
-        if not allRiskAnalyzed and riskResult is not None:
-            errorMsg = "Failed to perform full analysis on user prompt"
-        return errorMsg, riskResult
-    
+    def extract_assistant_content(self, body: dict) -> str:
+        """Extract assistant message from OpenAI response"""
+        choices = body.get("choices", [])
+        if choices:
+            return choices[0].get("message", {}).get("content", "")
+        return ""
 
     async def request(self, flow: http.HTTPFlow):
-        responseContextType = {"Content-Type": "application/json"}
-        originalPath = flow.request.path.lower()
-        logging.info(f"host: {flow.request.host}")
-        flow.request.url = self.openAiReqUrl
-        
-        # only allow one request url
-        if originalPath != self.allowedPath:
-            response_body = json.dumps({
-                "error": "Forbidden",
-                "message": f"Access denied, only requests to '{self.allowedHost}{self.allowedPath}' are allowed"
-            })
-            flow.response = http.Response.make(
-                403,
-                response_body.encode('utf-8'),
-                {"Content-Type": "application/json"}
-            )
+        """Intercept requests going to OpenAI"""
+        # Only intercept chat completions endpoint
+        if "/v1/chat/completions" not in flow.request.path:
             return
-         
-        logging.info(f"request: {flow.request}")
 
-        # analyze request message
-        body = None
         try:
-            body = json.loads(flow.request.content.decode('utf-8'))
-        except Exception as e:
-            logging.error(f"Unexpected decode error: {e}")
-        message = body.get("message", "").strip() if isinstance(body, dict) else None
+            body = json.loads(flow.request.content)
+            user_content = self.extract_user_content(body)
 
-        logging.info(f"body text: {message}")
+            if user_content:
+                is_blocked, message = await self.check_content(user_content)
+                if is_blocked:
+                    flow.response = http.Response.make(
+                        400,
+                        message.encode("utf-8"),
+                        {"Content-Type": "text/plain"}
+                    )
+        except Exception:
+            pass  # Let request through on error
 
-        # bad request, missing body parameter
-        if message is None or message == "":
-            flow.response = http.Response.make(
-                400,
-                json.dumps({
-                    "error": "Bad request",
-                    "message": "message is missing in the request body",
-                }),
-                responseContextType
-            )
+    async def response(self, flow: http.HTTPFlow):
+        """Intercept responses from OpenAI"""
+        # Only intercept chat completions endpoint
+        if "/v1/chat/completions" not in flow.request.path:
             return
-        
-        errorMsg, analyzedResult = await self.analyze(message)
-        if errorMsg:
-            flow.response = http.Response.make(
-                500,
-                json.dumps({
-                    "error": "Internal system error",
-                    "message": errorMsg
-                }),
-                responseContextType
-            )
+
+        if flow.response.status_code != 200:
             return
-        
-        elif analyzedResult and analyzedResult.detected:
-            blockedMessage = analyzedResult.blockMessage if analyzedResult.blockMessage else "The prompt was blocked because it is considered toxic"
-            flow.response = http.Response.make(
-                400, 
-                json.dumps({
-                    "error": "Content is toxic",
-                    "message": blockedMessage
-                }), 
-                responseContextType)
-            return
-        
-        # request to OpenAI
-        reqJson = {"model": self.openAiApiModel, "messages": [{"role": "user", "content": message}]}
-        flow.request.content = json.dumps(reqJson).encode('utf-8')
-        flow.request.headers["Authorization"] = f"Bearer {self.openAiApiKey}"
-        logging.info("end of request process")
+
+        try:
+            body = json.loads(flow.response.content)
+            assistant_content = self.extract_assistant_content(body)
+
+            if assistant_content:
+                is_blocked, message = await self.check_content(assistant_content)
+                if is_blocked:
+                    # Modify response to show blocked message
+                    body["choices"][0]["message"]["content"] = message
+                    flow.response.content = json.dumps(body).encode("utf-8")
+        except Exception:
+            pass  # Let response through on error
+
 
 addons = [GuardianFilter()]
